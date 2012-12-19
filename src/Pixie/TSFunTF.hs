@@ -17,7 +17,7 @@
 -- Copyright   :  (c) 2012 Tabula, Inc.
 -- License     :  BSD3
 -- 
--- Maintainer  :  conal@tabula.com
+-- Maintainer  :  conal@conal.net
 -- Stability   :  experimental
 -- 
 -- Type-structured collections via type families

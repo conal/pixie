@@ -17,7 +17,7 @@
 -- Copyright   :  (c) 2012 Tabula, Inc.
 -- License     :  BSD3
 -- 
--- Maintainer  :  conal@tabula.com
+-- Maintainer  :  conal@conal.net
 -- Stability   :  experimental
 -- 
 -- Circuit pictures via the diagrams library
