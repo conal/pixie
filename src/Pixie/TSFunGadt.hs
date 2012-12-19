@@ -6,7 +6,7 @@
 
 ----------------------------------------------------------------------
 -- |
--- Module      :  PicC.TSFunGadt
+-- Module      :  Pixie.TSFunGadt
 -- Copyright   :  (c) 2012 Tabula, Inc.
 -- License     :  BSD3
 -- 
@@ -16,7 +16,7 @@
 -- Type-structured collections as GADT
 ----------------------------------------------------------------------
 
-module PicC.TSFunGadt where
+module Pixie.TSFunGadt where
 
 -- TODO: explicit exports
 

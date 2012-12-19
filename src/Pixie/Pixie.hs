@@ -13,7 +13,7 @@
 
 ----------------------------------------------------------------------
 -- |
--- Module      :  PicC.PicC
+-- Module      :  Pixie.Pixie
 -- Copyright   :  (c) 2012 Tabula, Inc.
 -- License     :  BSD3
 -- 
@@ -23,7 +23,7 @@
 -- Circuit pictures via the diagrams library
 ----------------------------------------------------------------------
 
-module PicC.PicC where
+module Pixie.Pixie where
 
 -- TODO: explicit exports
 
@@ -39,25 +39,25 @@ import Control.Arrow.Transformer.Writer
 
 import Data.AffineSpace.Point
 
-import PicC.TSFunTF -- or TSFunGadt
+import Pixie.TSFunTF -- or TSFunGadt
 
 -- type Pins v a = TS a (Point v)
 --
--- type PicC' e v m a b = Pins v a -> (Pins b v, QDiagram e v m)
+-- type Pixie' e v m a b = Pins v a -> (Pins b v, QDiagram e v m)
 
--- | Circuit picture arrow in its most general form. See also 'PicC'.
-type PicC e v m = TSFun (Point v) (WriterArrow (QDiagram e v m) (->))
+-- | Circuit picture arrow in its most general form. See also 'Pixie'.
+type Pixie e v m = TSFun (Point v) (WriterArrow (QDiagram e v m) (->))
 
-runPicC :: ( Semigroup m, Floating (Scalar v), Ord (Scalar v)
+runPixie :: ( Semigroup m, Floating (Scalar v), Ord (Scalar v)
            , InnerSpace v, HasLinearMap v) =>
-           PicC e v m a b -> TS a (Point v) -> (TS b (Point v), QDiagram e v m)
-runPicC q a = runWriter (runTSFun q) a
+           Pixie e v m a b -> TS a (Point v) -> (TS b (Point v), QDiagram e v m)
+runPixie q a = runWriter (runTSFun q) a
 
 -- | Diagrams containing paths (renderable wherever paths are).
 type Diag = forall e. Renderable (Path R2) e => QDiagram e R2 Any
 
 -- | Circuit picture with typed inputs & outputs
-type a :> b = forall e. Renderable (Path R2) e => PicC e R2 Any a b
+type a :> b = forall e. Renderable (Path R2) e => Pixie e R2 Any a b
 
 -- | Input or output port collection. Currently just a position per component.
 type Ports a = TS a P2
@@ -66,7 +66,7 @@ type Ports a = TS a P2
 draw :: a :> b -> Ports a -> IO (Ports b)
 draw q a = defaultMain (d # pad 1.1) >> return b
  where
-   (b,d) = runPicC q a
+   (b,d) = runPixie q a
 
 {--------------------------------------------------------------------
     Belongs elsewhere (orphans)

@@ -1,5 +1,5 @@
-Name:                PicC
-Version:             0.0.0
+Name:                pixie
+Version:             0.1.0
 Cabal-Version:       >= 1.6
 Synopsis:            Circuit pictures
 Category:            Graphics, Circuits
@@ -14,7 +14,7 @@ build-type:          Simple
 
 source-repository head
   type:     git
-  location: git://github.com/conal/PicC.git
+  location: git://github.com/conal/pixie.git
 
 Library
   hs-Source-Dirs:      src
@@ -22,8 +22,8 @@ Library
   Build-Depends:       base<5, arrows, vector-space-points
                      , diagrams-lib, diagrams-svg
   Exposed-Modules:     
-                       PicC.TSFunGadt
-                       PicC.TSFunTF
-                       PicC.PicC
+                       Pixie.TSFunGadt
+                       Pixie.TSFunTF
+                       Pixie.Pixie
                        
   ghc-options:         -Wall

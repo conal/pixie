@@ -13,7 +13,7 @@
 
 ----------------------------------------------------------------------
 -- |
--- Module      :  PicC.TSFunTF
+-- Module      :  Pixie.TSFunTF
 -- Copyright   :  (c) 2012 Tabula, Inc.
 -- License     :  BSD3
 -- 
@@ -23,7 +23,7 @@
 -- Type-structured collections via type families
 ----------------------------------------------------------------------
 
-module PicC.TSFunTF where
+module Pixie.TSFunTF where
 
 -- TODO: explicit exports
 
