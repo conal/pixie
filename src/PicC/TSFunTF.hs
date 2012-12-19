@@ -1,11 +1,15 @@
 {-# LANGUAGE TypeFamilies, TypeOperators #-}
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
--- {-# LANGUAGE UndecidableInstances #-} -- see below
 
 {-# OPTIONS_GHC -Wall #-}
 
-{-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
+-- {-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
 -- {-# OPTIONS_GHC -fno-warn-unused-binds   #-} -- TEMP
+
+-- For Transformable instance. Maybe move elsewhere
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 ----------------------------------------------------------------------
 -- |
@@ -27,18 +31,29 @@ import Prelude hiding (id,(.))
 import Control.Category
 import Control.Arrow
 
-import Control.Arrow.Transformer
-import Control.Arrow.Operations
-import Control.Arrow.Transformer.Writer
+-- import Control.Compose ((<~))
+
+-- import Control.Newtype
+
+-- Maybe move elsewhere
+import Diagrams.Prelude (Transformable(..),V)
 
 type a :* b = (a,b)
 
-type family TS u a
+type family   TS u t
+
 type instance TS ()       t = ()
 type instance TS (a :* b) t = TS a t :* TS b t
 type instance TS Bool     t = t
 
-newtype TSFun x (~>) a b = TF { runTSFun :: TS a x ~> TS b x }
+type    TSFunX x (~>) a b = TS a x ~> TS b x
+newtype TSFun  x (~>) a b = TF { runTSFun :: TSFunX x (~>) a b }
+
+-- instance Newtype (TSFun  x (~>) a b) (TS a x ~> TS b x) where
+--   pack   = TF
+--   unpack = runTSFun
+--
+--    Illegal type synonym family application in instance:
 
 instance Category (~>) => Category (TSFun x (~>)) where
   id  = TF id
@@ -60,29 +75,23 @@ dup = TF (arr (\ d -> (d,d)))
 
 -- I don't think I can define lift, as it would have to convert a ~> b to TS a ~> TS b.
 
--- instance Arrow (~>) => ArrowTransformer (TSFun x) (~>)
---   lift f = 
+{--------------------------------------------------------------------
+    Maybe move elsewhere. Here to avoid orphans
+--------------------------------------------------------------------}
 
-{-
+instance Transformable (TS a x ~> TS b x) =>
+         Transformable (TSFun x (~>) a b) where
+  transform tr = TF . transform tr  . runTSFun
 
-instance ArrowWriter w (~>) => ArrowWriter w (TSFun x (~>)) where
-  write = TF undefined
+-- Needed for Transformable TSFun instance
+type instance V (TSFun x (~>) a b) = V (TS a x ~> TS b x)
 
-write :: TSFun x (~>) w ()
+-- Had to specialize to functions, since transform tr is one.
 
-TS w x 
-
-  newWriter = undefined
-
--- class (Monoid w, Arrow a) => ArrowWriter w a | a -> w where
---   write     :: a w ()
---   newWriter :: a e b -> a e (b,w)
-
--- newtype TSFun x (~>) a b = TF { runTSFun :: TS a x ~> TS b x }
-
---     Illegal instance declaration for `ArrowWriter w (TSFun x (~>))'
---       (the Coverage Condition fails for one of the functional dependencies;
---        Use -XUndecidableInstances to permit this)
---     In the instance declaration for `ArrowWriter w (TSFun x ~>)'
-
--}
+-- Alternatively, spell out requirements explicitly:
+-- 
+--   instance ( HasTrie (Basis (V (TS b x))), HasBasis (V (TS b x))
+--            , Transformable (TS a x), Transformable (TS b x)
+--            , V (TS a x) ~ V (TS b x)) =>
+--            Transformable (TSFun x (->) a b) where
+--     transform tr (TF f) = TF (transform tr f)

@@ -1,7 +1,12 @@
-{-# LANGUAGE Arrows, GADTs, TypeOperators #-}
+{-# LANGUAGE Arrows, GADTs, TypeOperators, TypeFamilies #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts #-}
+-- {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# OPTIONS_GHC -Wall #-}
+
+-- For Transformable WriterArrow instance
+{-# LANGUAGE TypeFamilies, UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
 -- {-# OPTIONS_GHC -fno-warn-unused-binds   #-} -- TEMP
@@ -33,9 +38,6 @@ import Control.Arrow.Transformer.Writer
 
 import Data.AffineSpace.Point
 
-import Data.MemoTrie (HasTrie)
-import Data.Basis (HasBasis(..))
-
 import PicC.TSFunTF -- or TSFunGadt
 
 newtype Pins v a = Pins (TS a (Point v))
@@ -47,7 +49,7 @@ type TPFun v = TSFun (Point v)
 type PicC' e v m = TPFun v (WriterArrow (QDiagram e v m) (->))
 
 runPicC :: ( Semigroup m, Floating (Scalar v), Ord (Scalar v)
-           , InnerSpace v, HasBasis v, HasTrie (Basis v)) =>
+           , InnerSpace v, HasLinearMap v) =>
            PicC' e v m a b -> TS a (Point v) -> (TS b (Point v), QDiagram e v m)
 runPicC q a = runWriter (runTSFun q) a
 
@@ -64,10 +66,10 @@ test q a = defaultMain (d # pad 1.1) >> return b
  where
    (b,d) = runPicC q a
 
-draw :: ( Semigroup m, InnerSpace v, HasBasis v, HasTrie (Basis v)
-        , s ~ Scalar v, Floating s, Fractional s, Ord s) =>
-        QDiagram e v m -> PicC' e v m () ()
-draw d = TF $ write . arr (const d)
+-- draw :: ( Semigroup m, InnerSpace v, HasLinearMap v
+--         , s ~ Scalar v, Floating s, Fractional s, Ord s) =>
+--         QDiagram e v m -> PicC' e v m () ()
+-- draw d = TF $ write . arr (const d)
 
 -- draw d = TF $ arr (\ () -> d) >>> write
 -- draw d = TF $ proc () -> do write -< d
@@ -75,31 +77,25 @@ draw d = TF $ write . arr (const d)
 -- I didn't move the diagram into the TSFun arrow domain, because it's a single
 -- diagram, not a TS full of them.
 
-box1 :: (a -> b) -> a :> b
-box1 f = proc a -> do
-  draw unitSquare -< ()
-  returnA -< f a
+{--------------------------------------------------------------------
+    Belongs elsewhere (orphans)
+--------------------------------------------------------------------}
 
--- R2 & Any (PicC) in box1 come from unitSquare
+-- Needed for Transformable instance
+type instance V (WriterArrow w (~>) a b) = V (a ~> (b,w))
 
--- Oops -- box1 desugars via arr, which bombs.
+instance (Arrow (~>), Monoid w, Transformable (a ~> (b,w))) =>
+         Transformable (WriterArrow w (~>) a b) where
+  transform tr = WriterArrow . transform tr  . runWriter
 
-box2 :: () :> ()
-box2 = proc () ->
-         draw unitSquare -< ()
+--     Constraint is no smaller than the instance head
+--       in the constraint: Transformable ((~>) a (b, w))
+--     (Use -XUndecidableInstances to permit this)
+--     In the instance declaration for `Transformable (WriterArrow w ~> a b)'
 
--- box2 also bombs. I think it desugars to arr (\ () -> ()) >>> draw unitSquare.
-
--- t1 :: IO P2
--- t1 = test (box2 (id :: Bool -> Bool)) (p2 (-1,0))
-
-t2 :: IO ()
-t2 = test box2 ()
-
-t3 :: IO ()
-t3 = test (draw unitSquare) ()
-
--- test :: a :> b -> Ports a -> IO (Ports b)
+{--------------------------------------------------------------------
+    Tests
+--------------------------------------------------------------------}
 
 port :: Colour Double -> P2 -> Diag
 port c p = circle 0.02 # fc c # translate (unPoint p)
@@ -111,21 +107,13 @@ oPort = port black
 -- p2 :: (Double,Double) -> P2
 -- p2 = P . r2
 
-box4 :: Bool :> Bool
-box4 = TF $
-  proc src -> do
-    let ip = p2 (-0.5,0)
-        op = p2 ( 0.5,0)
-    write -< (src ~~> ip) <> iPort ip <> oPort op <> unitSquare
-    returnA -< op
-
-t4 :: IO P2
-t4 = test box4 (p2 (-0.5,0))
-
--- Arrow from source to sink
+-- | Arrow from source to sink
 (~~>) :: P2 -> P2 -> Diag
-src ~~> snk = src ~~ snk <> h
+src ~~> snk = seg <> h
  where
+   -- Line segment
+   seg = src ~~ snk
+   -- Arrow head
    h =   eqTriangle (sqrt 3 / 2)        -- circum-diameter 1
        # fc black
        # rotate (30 :: Deg)             -- point right
@@ -134,12 +122,95 @@ src ~~> snk = src ~~ snk <> h
        # scaleY 0.75                    -- narrower
        # rotate (angle (snk .-. src))
        # translate (unPoint snk)
+   angle v = Rad (uncurry (flip atan2) (unr2 v))
 
--- angle :: (AffineSpace p, Diff p ~ R2) => p -> p -> Rad
--- angle src snk = Rad (uncurry atan2 (unr2 (snk .-. src)))
+-- | @Bool -> Bool@ circuit
+type BC = Bool :> Bool
 
-angle :: R2 -> Rad
-angle v = Rad (uncurry (flip atan2) (unr2 v))
+-- 'BC' with input on the left and output on the right and given width and
+-- height.
+box :: Double -> Double -> BC
+box w h = TF $
+  proc src -> do
+    let -- input & output ports
+        ip = p2 (-0.5*w,0)
+        op = p2 ( 0.5*w,0)
+    write -< freeze $ (src ~~> ip) <> iPort ip <> oPort op <> rect w h
+    returnA -< op
 
+-- The 'freeze' causes line widths to scale under transformation. I like that it
+-- maintains visual balance within boxes & arrows. Doubting, though. And where
+-- to put the freeze, so that it's simple & dependable?
 
--- (~~>) = (~~)
+-- Do I really want box to generate the arrow? I'll also need it elsewhere.
+-- Could instead move into a composition operation. Probably not into (.), since
+-- id must be an identity. Perhaps add arrows in (.) but customize for
+-- separation, degenerating smoothly to no arrow when source & sink points
+-- coincide (as in id). Need more noodling and experimentation.
+-- 
+-- If I move the arrow generation into a composition step, then I guess I'd want
+-- to change the data type from an input->output function to an input,output
+-- pair. Inversion becomes simply a swap, and transformation wouldn't need
+-- conjugation. The pictures wouldn't need artificial dangling inputs.
+-- 
+-- Oh, hm. *Where* would the identity circuit be? Wherever I put it, if I
+-- compose it with a circuit somewhere else, I'll get an arrow drawn, which
+-- breaks identity laws.
+
+t4 :: IO P2
+t4 = test (box 0.5 1) (p2 (-0.75,0.5))
+
+t5from :: R2 -> IO P2
+t5from v = test (translate v (box 0.5 1)) (p2 (-0.75,0.5))
+
+t5a, t5b :: IO P2
+t5a = t5from (r2 ( 0.5,0))
+t5b = t5from (r2 (-1.0,0))
+
+-- | Composition with transformation.
+comp :: (Category (~>), Transformable (b ~> c), V (b ~> c) ~ v) =>
+        Transformation v -> a ~> b -> b ~> c -> a ~> c
+comp xf a b = a >>> transform xf b
+
+-- | Composition with translation.
+compTranslate :: (Category (~>), Transformable (b ~> c), V (b ~> c) ~ v) =>
+                 v -> a ~> b -> b ~> c -> a ~> c
+compTranslate = comp . translation
+
+-- Some specialized operators. The right-associativity is critical here for
+-- cumulative transformation, since 'comp' transforms its right argument.
+infixr 3 -|-, -|/, -|\, -|*, -|&
+(-|-),(-|/),(-|\),(-|*),(-|&) :: 
+   (Category (~>), Transformable (b ~> c), V (b ~> c) ~ R2) =>
+   a ~> b -> b ~> c -> a ~> c
+(-|-) = compTranslate (r2 (1, 0))
+(-|/) = compTranslate (r2 (1, 1))
+(-|\) = compTranslate (r2 (1,-1))
+(-|*) = comp (translation (r2 (0.75,0)) <> scaling 0.6)
+(-|&) = comp (rotation (1/15 :: CircleFrac) <> translation (r2 (1,0)) <> scaling 0.7)
+
+-- Test with input from (-0.5,0)
+testA :: TS a P2 ~ P2 => (a :> b) -> IO (TS b P2)
+testA c = test c (p2 (-0.5,0))
+
+-- Use testA with the following examples.
+
+box1, box2 :: BC
+box1 = box 0.5 0.75
+box2 = box 0.75 0.5
+
+boxes1 :: BC
+boxes1 = box1 -|- box2 -|- box1 -|- box2 -|- box1
+
+boxes2 :: BC
+boxes2 = box1 -|/ box2 -|\ box1 -|\ box2 -|/ box1 -|- box2
+
+boxes3 :: BC
+boxes3 = b -|* b -|* b -|* b -|* b -|* b
+ where
+   b = box 0.75 0.75
+
+boxes4 :: BC
+boxes4 = b -|& b -|& b -|& b -|& b -|& b
+ where
+   b = box 0.75 0.75
