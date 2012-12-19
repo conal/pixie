@@ -1,13 +1,12 @@
 Name:                PicC
 Version:             0.0.0
 Cabal-Version:       >= 1.6
-Synopsis:            
-Category:            
+Synopsis:            Circuit pictures
+Category:            Graphics, Circuits
 Description:
-  What's it about?
+  Some experiments in compositional generation of circuit pictures
 Author:              Conal Elliott
-Maintainer:          conal@conal.net
-Copyright:           (c) 2012 by Conal Elliott
+Maintainer:          conal@tabula.com
 License:             BSD3
 License-File:        COPYING
 Stability:           experimental
@@ -20,7 +19,11 @@ source-repository head
 Library
   hs-Source-Dirs:      src
   Extensions:
-  Build-Depends:       base<5, arrows
+  Build-Depends:       base<5, arrows, vector-space-points
+                     , diagrams-lib, diagrams-svg
   Exposed-Modules:     
+                       PicC.TSFunGadt
+                       PicC.TSFunTF
+                       PicC.PicC
                        
   ghc-options:         -Wall

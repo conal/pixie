@@ -8,11 +8,12 @@
 -- |
 -- Module      :  PicC.TSFunGadt
 -- Copyright   :  (c) 2012 Tabula, Inc.
+-- License     :  BSD3
 -- 
 -- Maintainer  :  conal@tabula.com
 -- Stability   :  experimental
 -- 
--- TS structure as GADT
+-- Type-structured collections as GADT
 ----------------------------------------------------------------------
 
 module PicC.TSFunGadt where
@@ -82,7 +83,5 @@ instance Arrow (~>) => Arrow (TSFun (~>) v) where
 dup :: Arrow (~>) => TSFun (~>) v a (a :* a)
 dup = TF (arr (\ d -> d ::* d))
 
--- Hm! I can't simultaneously reject arr and use it for *** & dup.
-
 -- Alternatively, replace the GADT with a type family. Simpler Arrow but no
--- Functor, Applicative, Foldable, Traversable instance.
+-- Functor, Applicative, Foldable, Traversable instance. See TSFunTF.

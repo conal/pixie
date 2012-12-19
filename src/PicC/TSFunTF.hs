@@ -15,11 +15,12 @@
 -- |
 -- Module      :  PicC.TSFunTF
 -- Copyright   :  (c) 2012 Tabula, Inc.
+-- License     :  BSD3
 -- 
 -- Maintainer  :  conal@tabula.com
 -- Stability   :  experimental
 -- 
--- TS functions via type families
+-- Type-structured collections via type families
 ----------------------------------------------------------------------
 
 module PicC.TSFunTF where

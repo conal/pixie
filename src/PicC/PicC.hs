@@ -15,6 +15,7 @@
 -- |
 -- Module      :  PicC.PicC
 -- Copyright   :  (c) 2012 Tabula, Inc.
+-- License     :  BSD3
 -- 
 -- Maintainer  :  conal@tabula.com
 -- Stability   :  experimental
@@ -40,42 +41,32 @@ import Data.AffineSpace.Point
 
 import PicC.TSFunTF -- or TSFunGadt
 
-newtype Pins v a = Pins (TS a (Point v))
-
+-- type Pins v a = TS a (Point v)
+--
 -- type PicC' e v m a b = Pins v a -> (Pins b v, QDiagram e v m)
 
-type TPFun v = TSFun (Point v)
-
-type PicC' e v m = TPFun v (WriterArrow (QDiagram e v m) (->))
+-- | Circuit picture arrow in its most general form. See also 'PicC'.
+type PicC e v m = TSFun (Point v) (WriterArrow (QDiagram e v m) (->))
 
 runPicC :: ( Semigroup m, Floating (Scalar v), Ord (Scalar v)
            , InnerSpace v, HasLinearMap v) =>
-           PicC' e v m a b -> TS a (Point v) -> (TS b (Point v), QDiagram e v m)
+           PicC e v m a b -> TS a (Point v) -> (TS b (Point v), QDiagram e v m)
 runPicC q a = runWriter (runTSFun q) a
 
-type PicC e = PicC' e R2 Any
-
+-- | Diagrams containing paths (renderable wherever paths are).
 type Diag = forall e. Renderable (Path R2) e => QDiagram e R2 Any
 
-type a :> b = forall e. Renderable (Path R2) e => PicC e a b
+-- | Circuit picture with typed inputs & outputs
+type a :> b = forall e. Renderable (Path R2) e => PicC e R2 Any a b
 
+-- | Input or output port collection. Currently just a position per component.
 type Ports a = TS a P2
 
-test :: a :> b -> Ports a -> IO (Ports b)
-test q a = defaultMain (d # pad 1.1) >> return b
+-- | Draw circuit, given input positions
+draw :: a :> b -> Ports a -> IO (Ports b)
+draw q a = defaultMain (d # pad 1.1) >> return b
  where
    (b,d) = runPicC q a
-
--- draw :: ( Semigroup m, InnerSpace v, HasLinearMap v
---         , s ~ Scalar v, Floating s, Fractional s, Ord s) =>
---         QDiagram e v m -> PicC' e v m () ()
--- draw d = TF $ write . arr (const d)
-
--- draw d = TF $ arr (\ () -> d) >>> write
--- draw d = TF $ proc () -> do write -< d
-
--- I didn't move the diagram into the TSFun arrow domain, because it's a single
--- diagram, not a TS full of them.
 
 {--------------------------------------------------------------------
     Belongs elsewhere (orphans)
@@ -158,10 +149,10 @@ box w h = TF $
 -- breaks identity laws.
 
 t4 :: IO P2
-t4 = test (box 0.5 1) (p2 (-0.75,0.5))
+t4 = draw (box 0.5 1) (p2 (-0.75,0.5))
 
 t5from :: R2 -> IO P2
-t5from v = test (translate v (box 0.5 1)) (p2 (-0.75,0.5))
+t5from v = draw (translate v (box 0.5 1)) (p2 (-0.75,0.5))
 
 t5a, t5b :: IO P2
 t5a = t5from (r2 ( 0.5,0))
@@ -189,11 +180,11 @@ infixr 3 -|-, -|/, -|\, -|*, -|&
 (-|*) = comp (translation (r2 (0.75,0)) <> scaling 0.6)
 (-|&) = comp (rotation (1/15 :: CircleFrac) <> translation (r2 (1,0)) <> scaling 0.7)
 
--- Test with input from (-0.5,0)
-testA :: TS a P2 ~ P2 => (a :> b) -> IO (TS b P2)
-testA c = test c (p2 (-0.5,0))
+-- Draw with input from (-0.5,0)
+drawA :: TS a P2 ~ P2 => (a :> b) -> IO (TS b P2)
+drawA c = draw c (p2 (-0.5,0))
 
--- Use testA with the following examples.
+-- Use drawA with the following examples.
 
 box1, box2 :: BC
 box1 = box 0.5 0.75
