@@ -27,3 +27,5 @@ Library
                        Pixie.Pixie
                        
   ghc-options:         -Wall
+
+  -- TODO: add diagrams version dependency for functions as transformables.
