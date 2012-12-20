@@ -181,10 +181,10 @@ infixr 3 -|-, -|/, -|\, -|*, -|&
 (-|&) = comp (rotation (1/15 :: CircleFrac) <> translation (r2 (1,0)) <> scaling 0.7)
 
 -- Draw with input from (-0.5,0)
-drawA :: TS a P2 ~ P2 => (a :> b) -> IO (TS b P2)
-drawA c = draw c (p2 (-0.5,0))
+drawBB :: TS a P2 ~ P2 => (a :> b) -> IO (TS b P2)
+drawBB c = draw c (p2 (-0.5,0))
 
--- Use drawA with the following examples.
+-- Use drawBB with the following examples.
 
 bc1, bc2 :: BC
 bc1 = bc 0.5 0.75
@@ -205,3 +205,30 @@ bcs4 :: BC
 bcs4 = b -|& b -|& b -|& b -|& b -|& b
  where
    b = bc 0.75 0.75
+
+{--------------------------------------------------------------------
+    One-bit full adder
+--------------------------------------------------------------------}
+
+-- | Take a a carry-in from the left and pair of addend bits from above, and
+-- yield a sum bit below and a carry-out bit on the right.
+addB :: (Bool,(Bool,Bool)) :> (Bool,Bool)
+addB = TF $
+  proc (i,(a,b)) -> do
+    let -- input & output ports
+        ip = p2 (-1/2, 0  )
+        ap = p2 (-1/6, 1/2)
+        bp = p2 ( 1/6, 1/2)
+        sp = p2 (   0,-1/2)
+        op = p2 ( 1/2, 0  )
+    write -< freeze $   (i ~~> ip) <> (a ~~> ap) <> (b ~~> bp)
+                     <> iPort ip <> iPort ap <> iPort bp
+                     <> oPort sp <> oPort op
+                     <> unitSquare
+    returnA -< (sp,op)
+
+-- TODO: Refactor with convenience functions.
+
+drawAddB :: (Bool,(Bool,Bool)) :> (Bool,Bool) -> IO (P2,P2)
+drawAddB c = draw c (p2 (-1,0),(p2 (-1/6,1), p2 ( 1/6,1)))
+
