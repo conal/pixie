@@ -120,8 +120,8 @@ type BC = Bool :> Bool
 
 -- 'BC' with input on the left and output on the right and given width and
 -- height.
-box :: Double -> Double -> BC
-box w h = TF $
+bc :: Double -> Double -> BC
+bc w h = TF $
   proc src -> do
     let -- input & output ports
         ip = p2 (-0.5*w,0)
@@ -133,7 +133,7 @@ box w h = TF $
 -- maintains visual balance within boxes & arrows. Doubting, though. And where
 -- to put the freeze, so that it's simple & dependable?
 
--- Do I really want box to generate the arrow? I'll also need it elsewhere.
+-- Do I really want bc to generate the arrow? I'll also need it elsewhere.
 -- Could instead move into a composition operation. Probably not into (.), since
 -- id must be an identity. Perhaps add arrows in (.) but customize for
 -- separation, degenerating smoothly to no arrow when source & sink points
@@ -149,10 +149,10 @@ box w h = TF $
 -- breaks identity laws.
 
 t4 :: IO P2
-t4 = draw (box 0.5 1) (p2 (-0.75,0.5))
+t4 = draw (bc 0.5 1) (p2 (-0.75,0.5))
 
 t5from :: R2 -> IO P2
-t5from v = draw (translate v (box 0.5 1)) (p2 (-0.75,0.5))
+t5from v = draw (translate v (bc 0.5 1)) (p2 (-0.75,0.5))
 
 t5a, t5b :: IO P2
 t5a = t5from (r2 ( 0.5,0))
@@ -186,22 +186,22 @@ drawA c = draw c (p2 (-0.5,0))
 
 -- Use drawA with the following examples.
 
-box1, box2 :: BC
-box1 = box 0.5 0.75
-box2 = box 0.75 0.5
+bc1, bc2 :: BC
+bc1 = bc 0.5 0.75
+bc2 = bc 0.75 0.5
 
-boxes1 :: BC
-boxes1 = box1 -|- box2 -|- box1 -|- box2 -|- box1
+bcs1 :: BC
+bcs1 = bc1 -|- bc2 -|- bc1 -|- bc2 -|- bc1
 
-boxes2 :: BC
-boxes2 = box1 -|/ box2 -|\ box1 -|\ box2 -|/ box1 -|- box2
+bcs2 :: BC
+bcs2 = bc1 -|/ bc2 -|\ bc1 -|\ bc2 -|/ bc1 -|- bc2
 
-boxes3 :: BC
-boxes3 = b -|* b -|* b -|* b -|* b -|* b
+bcs3 :: BC
+bcs3 = b -|* b -|* b -|* b -|* b -|* b
  where
-   b = box 0.75 0.75
+   b = bc 0.75 0.75
 
-boxes4 :: BC
-boxes4 = b -|& b -|& b -|& b -|& b -|& b
+bcs4 :: BC
+bcs4 = b -|& b -|& b -|& b -|& b -|& b
  where
-   b = box 0.75 0.75
+   b = bc 0.75 0.75
