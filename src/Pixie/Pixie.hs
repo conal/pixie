@@ -171,13 +171,13 @@ instance InDiag P2 where
 instance (InDiag a, InDiag b) => InDiag (a,b) where
   (a,b) ~*> (a',b') = (a ~*> a') <> (b ~*> b')
 
+-- | Primitive circuit component with inputs & outputs
 prim :: (InDiag (Ports a), OutDiag (Ports b)) =>
         Diag -> Ports a -> Ports b -> a :> b
 prim d a b = TF $
   proc src -> do
     write  -< freeze (d <> (src ~*> a))
     output -< b
-
 
 
 {--------------------------------------------------------------------
@@ -201,8 +201,8 @@ instance (Arrow (~>), Monoid w, Transformable (a ~> (b,w))) =>
 --------------------------------------------------------------------}
 
 -- | Draw circuit, given input positions
-draw :: a :> b -> Ports a -> IO (Ports b)
-draw q a = defaultMain (d # pad 1.1) >> return b
+draw :: Ports a -> a :> b -> IO (Ports b)
+draw a q = defaultMain (d # pad 1.1) >> return b
  where
    (b,d) = runPixie q a
 
@@ -211,7 +211,7 @@ type BB = Bool :> Bool
 
 -- Draw with input from (-0.5,0)
 drawBB :: BB -> IO P2
-drawBB c = draw c (p2 (-0.5,0))
+drawBB = draw (p2 (-0.5,0))
 
 -- 'BB' with input on the left and output on the right and given width and
 -- height.
@@ -219,10 +219,10 @@ bb :: Double -> Double -> BB
 bb w h = prim (rect w h) (p2 (-w/2,0)) (p2 (w/2,0))
 
 t4 :: IO P2
-t4 = draw (bb 0.5 1) (p2 (-0.75,0.5))
+t4 = draw (p2 (-0.75,0.5)) (bb 0.5 1)
 
 t5from :: R2 -> IO P2
-t5from v = draw (translate v (bb 0.5 1)) (p2 (-0.75,0.5))
+t5from v = draw (p2 (-0.75,0.5)) (translate v (bb 0.5 1))
 
 t5a, t5b :: IO P2
 t5a = t5from (r2 ( 0.5,0))
@@ -262,4 +262,4 @@ addB = prim unitSquare
          (p2 (0,-1/2), p2 (1/2, 0))
 
 drawAddB :: (Bool,(Bool,Bool)) :> (Bool,Bool) -> IO (P2,P2)
-drawAddB c = draw c (p2 (-1,0),(p2 (-1/6,1), p2 ( 1/6,1)))
+drawAddB = draw (p2 (-1,0),(p2 (-1/6,1), p2 ( 1/6,1)))
