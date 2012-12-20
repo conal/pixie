@@ -1,6 +1,6 @@
 {-# LANGUAGE Arrows, GADTs, TypeOperators, TypeFamilies #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, TypeSynonymInstances #-}
 -- {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -115,6 +115,9 @@ src ~~> snk = seg <> h
        # translate (unPoint snk)
    angle v = Rad (uncurry (flip atan2) (unr2 v))
 
+(~*>) :: P2 -> P2 -> Diag
+src ~*> snk = src ~~> snk <> iPort snk
+
 -- | @Bool -> Bool@ circuit
 type BC = Bool :> Bool
 
@@ -126,7 +129,7 @@ bc w h = TF $
     let -- input & output ports
         ip = p2 (-0.5*w,0)
         op = p2 ( 0.5*w,0)
-    write -< freeze $ (src ~~> ip) <> iPort ip <> oPort op <> rect w h
+    write -< freeze $ (src ~*> ip) <> oPort op <> rect w h
     returnA -< op
 
 -- The 'freeze' causes line widths to scale under transformation. I like that it
@@ -221,14 +224,35 @@ addB = TF $
         bp = p2 ( 1/6, 1/2)
         sp = p2 (   0,-1/2)
         op = p2 ( 1/2, 0  )
-    write -< freeze $   (i ~~> ip) <> (a ~~> ap) <> (b ~~> bp)
-                     <> iPort ip <> iPort ap <> iPort bp
+    write -< freeze $   (i ~*> ip) <> (a ~*> ap) <> (b ~*> bp)
                      <> oPort sp <> oPort op
                      <> unitSquare
     returnA -< (sp,op)
 
--- TODO: Refactor with convenience functions.
+-- TODO: Refactor with convenience functions:
+--
+-- *   Combine (~~>) and iPort into (~*>). Done.
+-- *   Combine returing of output ports and generating their pictures.
 
 drawAddB :: (Bool,(Bool,Bool)) :> (Bool,Bool) -> IO (P2,P2)
 drawAddB c = draw c (p2 (-1,0),(p2 (-1/6,1), p2 ( 1/6,1)))
 
+
+class OutPic a where
+  outPic :: a -> Diag
+
+instance OutPic P2 where outPic = oPort
+instance (OutPic a, OutPic b) => OutPic (a,b) where
+  outPic (a,b) = outPic a <> outPic b
+
+outs :: (Renderable (Path R2) e, OutPic a) =>
+        WriterArrow (QDiagram e R2 Any) (->) a a
+outs = proc o -> do write -< freeze (outPic o)
+                    returnA -< o
+
+-- type Pixie e v m = TSFun (Point v) (WriterArrow (QDiagram e v m) (->))
+
+-- type Diag = forall e. Renderable (Path R2) e => QDiagram e R2 Any
+
+-- -- | Circuit picture with typed inputs & outputs
+-- type a :> b = forall e. Renderable (Path R2) e => Pixie e R2 Any a b
