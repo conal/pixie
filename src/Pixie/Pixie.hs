@@ -1,6 +1,7 @@
 {-# LANGUAGE Arrows, GADTs, TypeOperators, TypeFamilies #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 -- {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -39,6 +40,8 @@ import Control.Category
 import Control.Arrow
 import Control.Arrow.Operations (write)
 import Control.Arrow.Transformer.Writer
+
+import TypeUnary.Vec
 
 import Data.AffineSpace.Point
 
@@ -201,30 +204,30 @@ instance (Arrow (~>), Monoid w, Transformable (a ~> (b,w))) =>
 --------------------------------------------------------------------}
 
 -- | Draw circuit, given input positions
-draw :: Ports a -> a :> b -> IO (Ports b)
-draw a q = defaultMain (d # pad 1.1) >> return b
+draw :: Ports a -> a :> b -> IO ()
+draw a q = defaultMain (d # pad 1.1)
  where
-   (b,d) = runPixie q a
+   (_,d) = runPixie q a
 
 -- | @Bool -> Bool@ circuit
 type BB = Bool :> Bool
 
 -- Draw with input from (-0.5,0)
-drawBB :: BB -> IO P2
+drawBB :: BB -> IO ()
 drawBB = draw (p2 (-0.5,0))
 
--- 'BB' with input on the left and output on the right and given width and
--- height.
+-- | 'BB' with input on the left and output on the right and given
+-- width and height.
 bb :: Double -> Double -> BB
 bb w h = prim (rect w h) (p2 (-w/2,0)) (p2 (w/2,0))
 
-t4 :: IO P2
+t4 :: IO ()
 t4 = draw (p2 (-0.75,0.5)) (bb 0.5 1)
 
-t5from :: R2 -> IO P2
+t5from :: R2 -> IO ()
 t5from v = draw (p2 (-0.75,0.5)) (translate v (bb 0.5 1))
 
-t5a, t5b :: IO P2
+t5a, t5b :: IO ()
 t5a = t5from (r2 ( 0.5,0))
 t5b = t5from (r2 (-1.0,0))
 
@@ -258,8 +261,84 @@ bbs4 = b -|& b -|& b -|& b -|& b -|& b
 -- yield a sum bit below and a carry-out bit on the right.
 addB :: (Bool,(Bool,Bool)) :> (Bool,Bool)
 addB = prim unitSquare
-         (p2 (-1/2, 0), (p2 (-1/6, 1/2), p2 ( 1/6, 1/2)))
+         (p2 (-1/2, 0), (p2 (-1/6, 1/2), p2 (1/6, 1/2)))
          (p2 (0,-1/2), p2 (1/2, 0))
 
-drawAddB :: (Bool,(Bool,Bool)) :> (Bool,Bool) -> IO (P2,P2)
-drawAddB = draw (p2 (-1,0),(p2 (-1/6,1), p2 ( 1/6,1)))
+drawAddB :: (Bool,(Bool,Bool)) :> (Bool,Bool) -> IO ()
+drawAddB = draw (p2 (-1,0),(p2 (-1/6,1), p2 (1/6,1)))
+
+{--------------------------------------------------------------------
+    Carry ripple adder
+--------------------------------------------------------------------}
+
+addL :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool)
+addL = proc (ci,ps) -> do
+         case ps of
+           []      -> returnA -< ([],ci)
+           (p:ps') -> do (s ,co ) <- addB -< (ci,p)
+                         (ss,co') <- addL  -< (co,ps')
+                         returnA -< (s:ss, co')
+
+-- Note: requires ArrowChoice on TSFun.
+-- I don't think I have the right ArrowChoice instance for static use.
+-- Revisit.
+-- 
+-- TODO: replace [] with Vec n, which avoids ArrowChoice.
+
+drawAddL :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool) -> IO ()
+drawAddL = draw (p2 (-1,0), map src [0..3])
+ where
+   src :: Int -> (P2,P2)
+   src i = (p2 (-x,1), p2 (x,1))
+     where
+       x = 1/6 + fromIntegral i + 1
+
+
+type AddV n = (Bool, Vec n (Bool,Bool)) :> (Vec n Bool,Bool)
+
+addV :: IsNat n => AddV n
+addV = addV' nat
+
+addV' :: Nat n -> AddV n
+addV' Zero = undefined
+             -- proc (ci,ZVec) -> returnA -< (ZVec,ci)
+addV' (Succ n) = proc (ci, unConsV -> (p, ps')) -> do
+                    (s ,co ) <- addB    -< (ci,p)
+                    (ss,co') <- addV' n -< (co,ps')
+                    returnA -< (s :< ss, co')
+
+-- The following line causes GHC 7.4.1 to die:
+-- 
+--   addV' Zero = proc (ci,ZVec) -> returnA -< (ZVec,ci)
+--
+--   ghc: panic! (the 'impossible' happened)
+--     (GHC version 7.4.1 for i386-apple-darwin):
+--           nameModule $dArrow{v anNC}
+
+unConsV :: Vec (S n) a -> (a, Vec n a)
+unConsV (a :< as) = (a,as)
+
+-- View pattern to avoid
+-- 
+--     Proc patterns cannot use existential or GADT data constructors
+
+drawAddV :: IsNat n => AddV n -> IO ()
+drawAddV = draw (p2 (-1,0), src <$> iota)
+ where
+   src :: Int -> (P2,P2)
+   src i = (p2 (-x,1), p2 (x,1))
+     where
+       x = 1/6 + fromIntegral i + 1
+
+-- Avoid needing arr & ArrowChoice for TSFun
+
+addL' :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool)
+addL' = TF addLW
+
+addLW :: DWriter (Ports (Bool,[(Bool,Bool)])) (Ports ([Bool],Bool))
+addLW = proc (ci,ps) -> do
+          case ps of
+            []      -> returnA -< ([],ci)
+            (p:ps') -> do (s ,co ) <- runTSFun addB  -< (ci,p)
+                          (ss,co') <- translateX 2 addLW -< (co,ps')
+                          returnA -< (s:ss, co')
