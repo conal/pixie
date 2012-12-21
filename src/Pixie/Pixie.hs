@@ -66,15 +66,18 @@ type Diag = forall e. Renderable (Path R2) e => QDiagram e R2 Any
 type DWriter a b = 
   forall e. Renderable (Path R2) e => WriterArrow (QDiagram e R2 Any) (->) a b
 
--- Alternative. Requires ImpredicativeTypes. Is that forall type a Monoid?
-type DWriter' = 
-  WriterArrow (forall e. Renderable (Path R2) e => QDiagram e R2 Any) (->)
+-- -- Alternative. Requires ImpredicativeTypes. Is that forall type a Monoid?
+-- type DWriter' = 
+--   WriterArrow (forall e. Renderable (Path R2) e => QDiagram e R2 Any) (->)
 
 -- | Circuit picture with typed inputs & outputs
 type a :> b = forall e. Renderable (Path R2) e => Pixie e R2 Any a b
 
--- Alternative
-type (:>:) = TSFun (Point R2) DWriter'
+-- Inside a '(:>)'
+type a :>: b = DWriter (Ports a) (Ports b)
+
+-- -- Alternative
+-- type (:>:) = TSFun (Point R2) DWriter'
 
 -- | Input or output port collection. Currently just a position per component.
 type Ports a = TS a P2
@@ -199,6 +202,12 @@ instance (Arrow (~>), Monoid w, Transformable (a ~> (b,w))) =>
 --     (Use -XUndecidableInstances to permit this)
 --     In the instance declaration for `Transformable (WriterArrow w ~> a b)'
 
+type instance V (Vec n t) = V t
+
+instance Transformable t => Transformable (Vec n t) where
+  transform xf = fmap (transform xf)
+
+
 {--------------------------------------------------------------------
     Tests
 --------------------------------------------------------------------}
@@ -296,16 +305,16 @@ drawAddL = draw (p2 (-1,0), map src [0..3])
 
 type AddV n = (Bool, Vec n (Bool,Bool)) :> (Vec n Bool,Bool)
 
-addV :: IsNat n => AddV n
-addV = addV' nat
+-- addV :: IsNat n => AddV n
+-- addV = addV' nat
 
-addV' :: Nat n -> AddV n
-addV' Zero = undefined
-             -- proc (ci,ZVec) -> returnA -< (ZVec,ci)
-addV' (Succ n) = proc (ci, unConsV -> (p, ps')) -> do
-                    (s ,co ) <- addB    -< (ci,p)
-                    (ss,co') <- addV' n -< (co,ps')
-                    returnA -< (s :< ss, co')
+-- addV' :: Nat n -> AddV n
+-- addV' Zero = undefined
+--              -- proc (ci,ZVec) -> returnA -< (ZVec,ci)
+-- addV' (Succ n) = proc (ci, unConsV -> (p, ps')) -> do
+--                     (s ,co ) <- addB    -< (ci,p)
+--                     (ss,co') <- addV' n -< (co,ps')
+--                     returnA -< (s :< ss, co')
 
 -- The following line causes GHC 7.4.1 to die:
 -- 
@@ -318,27 +327,56 @@ addV' (Succ n) = proc (ci, unConsV -> (p, ps')) -> do
 unConsV :: Vec (S n) a -> (a, Vec n a)
 unConsV (a :< as) = (a,as)
 
+-- isZeroV :: Vec n a -> Bool
+-- isZeroV ZVec   = True
+-- isZeroV (_:<_) = False
+
 -- View pattern to avoid
 -- 
 --     Proc patterns cannot use existential or GADT data constructors
 
+addV :: IsNat n => AddV n
+addV = TF (addV' nat)
+
+addV' :: Nat n -> (Bool, Vec n (Bool,Bool)) :>: (Vec n Bool,Bool)
+addV' Zero = proc (ci,_) -> returnA -< (ZVec,ci)
+addV' (Succ n) = proc (ci, unConsV -> (p, ps')) -> do
+                    (s ,co ) <- runTSFun addB -< (ci,p)
+                    (ss,co') <- translateX addSep (addV' n) -< (co,ps')
+                    returnA -< (s :< ss, co')
+
+addSep :: Double
+addSep = 4/3
+
 drawAddV :: IsNat n => AddV n -> IO ()
-drawAddV = draw (p2 (-1,0), src <$> iota)
+drawAddV = draw (p2 (delta,0), src <$> iota)
  where
+   delta = 1/2 - addSep
    src :: Int -> (P2,P2)
-   src i = (p2 (-x,1), p2 (x,1))
+   src i = translateX dx (p2 (-1/6,-delta), p2 (1/6,-delta))
      where
-       x = 1/6 + fromIntegral i + 1
+       dx = addSep * fromIntegral i
 
 -- Avoid needing arr & ArrowChoice for TSFun
 
 addL' :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool)
 addL' = TF addLW
 
-addLW :: DWriter (Ports (Bool,[(Bool,Bool)])) (Ports ([Bool],Bool))
+addLW :: (Bool,[(Bool,Bool)]) :>: ([Bool],Bool)
 addLW = proc (ci,ps) -> do
           case ps of
             []      -> returnA -< ([],ci)
             (p:ps') -> do (s ,co ) <- runTSFun addB  -< (ci,p)
-                          (ss,co') <- translateX 2 addLW -< (co,ps')
+                          (ss,co') <- translateX addSep addLW -< (co,ps')
                           returnA -< (s:ss, co')
+
+drawAddL' :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool) -> IO ()
+drawAddL' = draw (p2 (delta,0), map src [0..31])
+ where
+   delta = 1/2 - addSep
+   src :: Int -> (P2,P2)
+   src i = translateX dx (p2 (-1/6,-delta), p2 (1/6,-delta))
+     where
+       dx = addSep * fromIntegral i
+
+-- TODO: Try another version using take & iterate for summand positions.
