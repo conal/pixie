@@ -32,19 +32,24 @@ import Prelude hiding (id,(.))
 import Control.Category
 import Control.Arrow
 
--- import Control.Compose ((<~))
-
 -- import Control.Newtype
+
+import TypeUnary.Vec (Vec)
 
 -- Maybe move elsewhere
 import Diagrams.Prelude (Transformable(..),V)
 
 type a :* b = (a,b)
+type a :+ b = Either a b
 
 type family   TS u t
 
-type instance TS ()       t = ()
-type instance TS (a :* b) t = TS a t :* TS b t
+type instance TS ()        t = ()
+type instance TS (a :* b)  t = TS a t :* TS b t
+type instance TS (a :+ b)  t = TS a t :+ TS b t     -- Really?? Maybe product.
+type instance TS [a]       t = [TS a t]
+type instance TS (Vec n a) t = Vec n (TS a t)
+
 type instance TS Bool     t = t
 
 type    TSFunX x (~>) a b = TS a x ~> TS b x
@@ -67,14 +72,27 @@ instance Arrow (~>) => Arrow (TSFun x (~>)) where
   first  f = f *** id
   second g = id *** g
 
+-- TODO: Maybe simplify this instance.
+
 dup :: Arrow (~>) => TSFun x (~>) a (a :* a)
-dup = TF (arr (\ d -> (d,d)))
--- dup = error "dup on TSFun temporary suspended"
+-- dup = TF (arr (\ d -> (d,d)))
+dup = TF (arr (id &&& id))
 
 -- I'll have to use something other than arr here. Probably replace Arrow with
 -- CategoryProduct
 
 -- I don't think I can define lift, as it would have to convert a ~> b to TS a ~> TS b.
+
+instance ArrowChoice (~>) => ArrowChoice (TSFun x (~>)) where
+  TF f +++ TF g = TF (f +++ g)
+  f ||| g  = jam . (f +++ g)
+  left  f = f +++ id
+  right g = id +++ g
+
+jam :: ArrowChoice (~>) => TSFun x (~>) (a :+ a) a
+jam = TF (arr (id ||| id))
+
+
 
 {--------------------------------------------------------------------
     Maybe move elsewhere. Here to avoid orphans
