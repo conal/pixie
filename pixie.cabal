@@ -1,5 +1,5 @@
 Name:                pixie
-Version:             0.1.0
+Version:             0.1.1
 Cabal-Version:       >= 1.6
 Synopsis:            Circuit pictures
 Category:            Graphics, Circuits
@@ -19,8 +19,8 @@ source-repository head
 Library
   hs-Source-Dirs:      src
   Extensions:
-  Build-Depends:       base<5, arrows, vector-space-points
-                     , diagrams-lib, diagrams-svg
+  Build-Depends:       base<5, arrows, newtype, process, vector-space-points
+                     , diagrams-lib, diagrams-svg, type-unary
   Exposed-Modules:     
                        Pixie.TSFunGadt
                        Pixie.TSFunTF
