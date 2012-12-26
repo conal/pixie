@@ -32,18 +32,21 @@ module Pixie.Pixie where
 -- TODO: explicit exports
 
 import Prelude hiding (id,(.))
-import Diagrams.Prelude
-import Diagrams.Backend.SVG
-import Diagrams.Backend.SVG.CmdLine
 
+import Control.Monad (void)
 import Control.Category
 import Control.Arrow
 import Control.Arrow.Operations (write)
 import Control.Arrow.Transformer.Writer
+import System.Process (system)
 
 import TypeUnary.Vec
 
 import Data.AffineSpace.Point
+
+import Diagrams.Prelude
+import Diagrams.Backend.SVG
+import Diagrams.Backend.SVG.CmdLine
 
 import Pixie.TSFunTF -- or TSFunGadt
 
@@ -214,7 +217,8 @@ instance Transformable t => Transformable (Vec n t) where
 
 -- | Draw circuit, given input positions
 draw :: Ports a -> a :> b -> IO ()
-draw a q = defaultMain (d # pad 1.1)
+draw a q = do defaultMain (d # pad 1.1)
+              void (system "convert output.svg output.pdf")
  where
    (_,d) = runPixie q a
 
@@ -280,60 +284,14 @@ drawAddB = draw (p2 (-1,0),(p2 (-1/6,1), p2 (1/6,1)))
     Carry ripple adder
 --------------------------------------------------------------------}
 
-addL :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool)
-addL = proc (ci,ps) -> do
-         case ps of
-           []      -> returnA -< ([],ci)
-           (p:ps') -> do (s ,co ) <- addB -< (ci,p)
-                         (ss,co') <- addL  -< (co,ps')
-                         returnA -< (s:ss, co')
-
--- Note: requires ArrowChoice on TSFun.
--- I don't think I have the right ArrowChoice instance for static use.
--- Revisit.
--- 
--- TODO: replace [] with Vec n, which avoids ArrowChoice.
-
-drawAddL :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool) -> IO ()
-drawAddL = draw (p2 (-1,0), map src [0..3])
- where
-   src :: Int -> (P2,P2)
-   src i = (p2 (-x,1), p2 (x,1))
-     where
-       x = 1/6 + fromIntegral i + 1
-
+-- Spacing between adder boxes
+addSep :: Double
+addSep = 4/3
 
 type AddV n = (Bool, Vec n (Bool,Bool)) :> (Vec n Bool,Bool)
 
--- addV :: IsNat n => AddV n
--- addV = addV' nat
-
--- addV' :: Nat n -> AddV n
--- addV' Zero = undefined
---              -- proc (ci,ZVec) -> returnA -< (ZVec,ci)
--- addV' (Succ n) = proc (ci, unConsV -> (p, ps')) -> do
---                     (s ,co ) <- addB    -< (ci,p)
---                     (ss,co') <- addV' n -< (co,ps')
---                     returnA -< (s :< ss, co')
-
--- The following line causes GHC 7.4.1 to die:
--- 
---   addV' Zero = proc (ci,ZVec) -> returnA -< (ZVec,ci)
---
---   ghc: panic! (the 'impossible' happened)
---     (GHC version 7.4.1 for i386-apple-darwin):
---           nameModule $dArrow{v anNC}
-
 unConsV :: Vec (S n) a -> (a, Vec n a)
 unConsV (a :< as) = (a,as)
-
--- isZeroV :: Vec n a -> Bool
--- isZeroV ZVec   = True
--- isZeroV (_:<_) = False
-
--- View pattern to avoid
--- 
---     Proc patterns cannot use existential or GADT data constructors
 
 addV :: IsNat n => AddV n
 addV = TF (addV' nat)
@@ -345,8 +303,9 @@ addV' (Succ n) = proc (ci, unConsV -> (p, ps')) -> do
                     (ss,co') <- translateX addSep (addV' n) -< (co,ps')
                     returnA -< (s :< ss, co')
 
-addSep :: Double
-addSep = 4/3
+-- View pattern to avoid
+-- 
+--     Proc patterns cannot use existential or GADT data constructors
 
 drawAddV :: IsNat n => AddV n -> IO ()
 drawAddV = draw (p2 (delta,0), src <$> iota)
@@ -357,21 +316,25 @@ drawAddV = draw (p2 (delta,0), src <$> iota)
      where
        dx = addSep * fromIntegral i
 
--- Avoid needing arr & ArrowChoice for TSFun
+-- For instance,
+-- 
+--   drawAddV (addV :: AddV N6)
 
-addL' :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool)
-addL' = TF addLW
+-- List version
 
-addLW :: (Bool,[(Bool,Bool)]) :>: ([Bool],Bool)
-addLW = proc (ci,ps) -> do
+addL :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool)
+addL = TF addL'
+
+addL' :: (Bool,[(Bool,Bool)]) :>: ([Bool],Bool)
+addL' = proc (ci,ps) -> do
           case ps of
             []      -> returnA -< ([],ci)
             (p:ps') -> do (s ,co ) <- runTSFun addB  -< (ci,p)
-                          (ss,co') <- translateX addSep addLW -< (co,ps')
+                          (ss,co') <- translateX addSep addL' -< (co,ps')
                           returnA -< (s:ss, co')
 
-drawAddL' :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool) -> IO ()
-drawAddL' = draw (p2 (delta,0), map src [0..31])
+drawAddL :: Int -> (Bool,[(Bool,Bool)]) :> ([Bool],Bool) -> IO ()
+drawAddL n = draw (p2 (delta,0), map src [0..n-1])
  where
    delta = 1/2 - addSep
    src :: Int -> (P2,P2)
