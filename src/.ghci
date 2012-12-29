@@ -1,3 +1,6 @@
 :set args -o output.svg -h 400
 :set -XTypeOperators
 :set -XFlexibleContexts
+
+-- So ghci can find CatSynth/Has-inc.hs
+:set -package cat-synth
