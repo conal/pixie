@@ -340,6 +340,9 @@ type A = Bool -- Addend bit
 type C = Bool -- Carry bit
 type R = Bool -- Sum (result) bit
 
+-- TODO: Perhaps newtype A, C, and R to improve static typing.
+-- Decode into Bool.
+
 type A2  = A  :* A                      -- Addends
 type A2C = A2 :* C                      -- Addends and carry
 type CR  = C  :* R                      -- Carry and sum
@@ -359,8 +362,6 @@ drawAddB :: A2C :> CR -> IO ()
 drawAddB = draw ((p2 (-1/6,5/6), p2 (1/6,5/6)), p2 (5/6,0))
 
 -- drawAddB addB
-
--- TODO: Consolidate and/or remove redundant location specifications
 
 {--------------------------------------------------------------------
     Carry ripple adder
@@ -403,6 +404,7 @@ unVecS' = swapP . unVecS
 addV :: IsNat n => AddV n
 addV = addV' nat
 
+-- addV' :: Nat n -> AddV n
 -- addV' Zero     = proc (zvec,ci) -> returnA -< (ZVec,ci)
 -- addV' (Succ n) = proc (unConsV -> (p, ps'), ci) -> do
 --                     (co ,s ) <- addB    -< (p  ,ci)
@@ -453,14 +455,19 @@ runPixieSt = runPixie . runState
 type (:#>) = PixieSt SVG R2 Any C
 
 -- | Stateful single-bit full adder
-addBS :: A2 :#> R
-addBS = state (swapP . addB)
+addS :: A2 :#> R
+addS = state (swapP . addB)
 
 -- | Stateful ripple-carry adder for traversable structures
 addT :: Traversable t (:#>) => t A2 :#> t R
-addT = traverse addBS
+addT = traverse addS
 
 -- TODO: Generalize from (:#>) to ArrowState
+
+-- TODO: Specialize to trees. How to draw the trees?
+
+-- TODO: Put some guts into the adders.
+-- Can I make structured drawings?
 
 -- | Stateful ripple carry addition on vectors
 type AddSV n = Vec n A2 :#> Vec n R
