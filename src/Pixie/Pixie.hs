@@ -2,6 +2,10 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 -- {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -31,13 +35,15 @@ module Pixie.Pixie where
 
 -- TODO: explicit exports
 
-import Prelude hiding (id,(.))
+import Prelude hiding (id,(.),fst,snd,const)
 
 import Control.Monad (void)
 import Control.Category
 import Control.Arrow
-import Control.Arrow.Operations (write)
+import Control.Arrow.Operations (ArrowWriter(..)) -- ,ArrowState(..)
+import Control.Arrow.Transformer (lift)
 import Control.Arrow.Transformer.Writer
+-- import Control.Arrow.Transformer.State
 import System.Process (system)
 
 import TypeUnary.Vec
@@ -48,22 +54,45 @@ import Diagrams.Prelude
 import Diagrams.Backend.SVG
 import Diagrams.Backend.SVG.CmdLine
 
+import CatSynth.Misc (Unop)
+import CatSynth.Decode (EncodingF,EncodeF(..),Decoding,Decode(..))
+import CatSynth.Traversable
+import CatSynth.Has
+import CatSynth.StripTypes
+import CatSynth.Control.Arrow.Transformer.State
+
 import Pixie.TSFunTF -- or TSFunGadt
+
+-- For now, but remove the WriterArrow orphan later
+#include "CatSynth/Has-inc.hs"
+#include "CatSynth/Decode-inc.hs"
 
 -- type Pins v a = TS a (Point v)
 --
 -- type Pixie' e v m a b = Pins v a -> (Pins b v, QDiagram e v m)
 
 -- | Circuit picture arrow in its most general form. See also 'Pixie'.
-type Pixie e v m = TSFun (Point v) (WriterArrow (QDiagram e v m) (->))
+type Pixie e v m = Strip (TSFun (Point v) (WriterArrow (QDiagram e v m) (->)))
+
+-- TODO: Move e to after v & m for convenient partial application.
+
+type DecodeP v c = ( Decode (TS c (Point v))
+                   , Decoding (TS c (Point v)) ~ TS (Decoding c) (Point v) )
+type DecodePP v a b = (DecodeP v a, DecodeP v b)
 
 runPixie :: ( Semigroup m, Floating (Scalar v), Ord (Scalar v)
-           , InnerSpace v, HasLinearMap v) =>
-           Pixie e v m a b -> TS a (Point v) -> (TS b (Point v), QDiagram e v m)
-runPixie q a = runWriter (runTSFun q) a
+            , InnerSpace v, HasLinearMap v ) =>
+            DecodePP v a b =>
+            Pixie e v m a b -> TS a (Point v) -> (TS b (Point v), QDiagram e v m)
+runPixie q a = first encode $ (runWriter.runTSFun.unA) q (decode a)
 
 -- | Diagrams containing paths (renderable wherever paths are).
-type Diag = forall e. Renderable (Path R2) e => QDiagram e R2 Any
+type Diag' v m = forall e. Renderable (Path v) e => QDiagram e v m
+
+-- | Specialization of 'Diag''
+type Diag = Diag' R2 Any
+
+-- type Diag = forall e. Renderable (Path R2) e => QDiagram e R2 Any
 
 -- | Diagram writer
 type DWriter a b = 
@@ -77,13 +106,16 @@ type DWriter a b =
 type a :> b = forall e. Renderable (Path R2) e => Pixie e R2 Any a b
 
 -- Inside a '(:>)'
-type a :>: b = DWriter (Ports a) (Ports b)
+type a :>: b = DWriter (Decoding (Ports a)) (Decoding (Ports b))
 
 -- -- Alternative
--- type (:>:) = TSFun (Point R2) DWriter'
+-- type (:>:) = TSFun P2 DWriter'
 
 -- | Input or output port collection. Currently just a position per component.
 type Ports a = TS a P2
+
+-- | Ports of decoding
+type DPorts a = Ports (Decoding a)
 
 {--------------------------------------------------------------------
     Utilities
@@ -180,15 +212,35 @@ instance InDiag P2 where
 instance (InDiag a, InDiag b) => InDiag (a,b) where
   (a,b) ~*> (a',b') = (a ~*> a') <> (b ~*> b')
 
--- | Primitive circuit component with inputs & outputs
-prim :: (InDiag (Ports a), OutDiag (Ports b)) =>
-        Diag -> Ports a -> Ports b -> a :> b
-prim d a b = TF $
+-- (~+>) :: (AdditiveGroup a, InDiag a) => a -> a -> Diag
+-- src ~+> snk = src ~*> (src ^+^ snk)
+
+type Diags a b = (DecodePP R2 a b, InDiag (DPorts a), OutDiag (DPorts b))
+
+-- | Generalized 'prim' with ports computed from source.
+primF :: Diags a b =>
+         (Ports a -> (Diag, Ports a, Ports b)) -> a :> b
+primF f = A $ TF $
   proc src -> do
-    write  -< freeze (d <> (src ~*> a))
-    output -< b
+    let (d,a,b) = f (encode src)
+    write  -< freeze (d <> (src ~*> decode a))
+    output -< decode b
 
+-- | Primitive circuit component with inputs & outputs
+prim :: Diags a b =>
+        Diag -> Ports a -> Ports b -> a :> b
+prim d a b = primF (const (d,a,b))
 
+type Transfo c = (Transformable (Ports c), V (Ports c) ~ R2)
+type Transfos a b = (Transfo a, Transfo b)
+
+primDel :: forall a b. (Diags a b, Transfos a b) =>
+           (Ports a -> R2) -> Diag -> Ports a -> Ports b -> a :> b
+primDel del diag a b =
+  primF (\ w -> let f :: forall t. (Transformable t, V t ~ R2) => Unop t
+                    f = translate (del w) in 
+                  (f diag, f a, f b))
+ 
 {--------------------------------------------------------------------
     Belongs elsewhere (orphans)
 --------------------------------------------------------------------}
@@ -199,6 +251,8 @@ type instance V (WriterArrow w (~>) a b) = V (a ~> (b,w))
 instance (Arrow (~>), Monoid w, Transformable (a ~> (b,w))) =>
          Transformable (WriterArrow w (~>) a b) where
   transform tr = WriterArrow . transform tr  . runWriter
+  -- SEC-style:
+  -- transform = inWriter . transform
 
 --     Constraint is no smaller than the instance head
 --       in the constraint: Transformable ((~>) a (b, w))
@@ -209,6 +263,33 @@ type instance V (Vec n t) = V t
 
 instance Transformable t => Transformable (Vec n t) where
   transform xf = fmap (transform xf)
+  -- transform = fmap . transform
+
+type instance V (Strip (~>) a b) = V (StripX (~>) a b)
+
+instance (HasLinearMap (V (StripX (~>) a b)), Transformable (StripX (~>) a b))
+      => Transformable (Strip (~>) a b) where
+  transform tr = inA (transform tr)
+  -- transform = inA . transform
+
+-- type instance Decoding (Point v) = Decoding v
+-- instance Decode v => Decode (Point v) where
+--   decode = decode . unPoint
+--   encode = Point . encode
+
+-- type instance Decoding R2 = (Double,Double)
+-- instance Decode R2 where
+--   encode = r2
+--   decode = unr2
+
+-- type instance Decoding (Point v) = Point v
+-- instance Category ar => Decode ar (Point v) where
+--   decode = id
+--   encode = id
+
+DecodePrim(Point v)
+
+TransInstances(lift,WriterArrow w,(Arrow (~>), Monoid w))
 
 
 {--------------------------------------------------------------------
@@ -216,7 +297,8 @@ instance Transformable t => Transformable (Vec n t) where
 --------------------------------------------------------------------}
 
 -- | Draw circuit, given input positions
-draw :: Ports a -> a :> b -> IO ()
+draw :: DecodePP R2 a b =>
+        Ports a -> a :> b -> IO ()
 draw a q = do defaultMain (d # pad 1.1)
               void (system "convert output.svg output.pdf")
  where
@@ -272,43 +354,31 @@ bbs4 = b -|& b -|& b -|& b -|& b -|& b
 
 -- | Take a a carry-in from the left and pair of addend bits from above, and
 -- yield a sum bit below and a carry-out bit on the right.
-addB :: (Bool,(Bool,Bool)) :> (Bool,Bool)
+addB :: ((Bool,Bool),Bool) :> (Bool,Bool)
 addB = prim unitSquare
-         (p2 (-1/2, 0), (p2 (-1/6, 1/2), p2 (1/6, 1/2)))
-         (p2 (0,-1/2), p2 (1/2, 0))
+         ((p2 (-1/6, 1/2), p2 (1/6, 1/2)) , p2 (-1/2, 0))
+         (p2 (0,-1/2)                     , p2 (1/2, 0))
 
-drawAddB :: (Bool,(Bool,Bool)) :> (Bool,Bool) -> IO ()
-drawAddB = draw (p2 (-1,0),(p2 (-1/6,1), p2 (1/6,1)))
+drawAddB :: ((Bool,Bool),Bool) :> (Bool,Bool) -> IO ()
+drawAddB = draw ((p2 (-1/6,1), p2 (1/6,1)), p2 (-1,0))
+
+-- primDel :: forall a b. (Diags a b, Transfos a b) =>
+--            (Ports a -> R2) -> Diag -> Ports a -> Ports b -> a :> b
+
+addBDel :: ((Bool,Bool),Bool) :> (Bool,Bool)
+addBDel = primDel
+            (\ (_,P c) -> c + r2 (5/6,0))
+            unitSquare
+            ((p2 (-1/6, 1/2), p2 (1/6, 1/2)) , p2 (-1/2, 0))
+            (p2 (0,-1/2)                     , p2 (1/2, 0))
+
 
 {--------------------------------------------------------------------
     Carry ripple adder
 --------------------------------------------------------------------}
 
--- Spacing between adder boxes
-addSep :: Double
-addSep = 4/3
-
-type AddV n = (Bool, Vec n (Bool,Bool)) :> (Vec n Bool,Bool)
-
-unConsV :: Vec (S n) a -> (a, Vec n a)
-unConsV (a :< as) = (a,as)
-
-addV :: IsNat n => AddV n
-addV = TF (addV' nat)
-
-addV' :: Nat n -> (Bool, Vec n (Bool,Bool)) :>: (Vec n Bool,Bool)
-addV' Zero = proc (ci,_) -> returnA -< (ZVec,ci)
-addV' (Succ n) = proc (ci, unConsV -> (p, ps')) -> do
-                    (s ,co ) <- runTSFun addB -< (ci,p)
-                    (ss,co') <- translateX addSep (addV' n) -< (co,ps')
-                    returnA -< (s :< ss, co')
-
--- View pattern to avoid
--- 
---     Proc patterns cannot use existential or GADT data constructors
-
-drawAddV :: IsNat n => AddV n -> IO ()
-drawAddV = draw (p2 (delta,0), src <$> iota)
+addVIns :: IsNat n => Ports (Vec n (Bool,Bool),Bool)
+addVIns = (src <$> iota, p2 (delta,0))
  where
    delta = 1/2 - addSep
    src :: Int -> (P2,P2)
@@ -316,21 +386,52 @@ drawAddV = draw (p2 (delta,0), src <$> iota)
      where
        dx = addSep * fromIntegral i
 
+-- Spacing between adder boxes
+addSep :: Double
+addSep = 4/3
+
+{-
+
+type AddV n = (Vec n (Bool,Bool), Bool) :> (Vec n Bool,Bool)
+
+consV :: (a, Vec n a) -> Vec (S n) a
+consV = uncurry (:<)
+
+unConsV :: Vec (S n) a -> (a, Vec n a)
+unConsV (a :< as) = (a,as)
+
+addV :: IsNat n => AddV n
+addV = A $ TF (addV' nat)
+
+addV' :: Nat n -> (Vec n (Bool,Bool),Bool) :>: (Vec n Bool,Bool)
+addV' Zero = proc (_,ci) -> returnA -< (ZVec,ci)
+addV' (Succ n) = proc (unConsV -> (p, ps'), ci) -> do
+                    (s ,co ) <- runTSFun addB -< (p,ci)
+                    (ss,co') <- translateX addSep (addV' n) -< (ps',co)
+                    returnA -< (s :< ss, co')
+
+-- View pattern to avoid
+-- 
+--     Proc patterns cannot use existential or GADT data constructors
+
+drawAddV :: IsNat n => AddV n -> IO ()
+drawAddV = draw addVIns
+
 -- For instance,
 -- 
 --   drawAddV (addV :: AddV N6)
 
 -- List version
 
-addL :: (Bool,[(Bool,Bool)]) :> ([Bool],Bool)
+addL :: ([(Bool,Bool)],Bool) :> ([Bool],Bool)
 addL = TF addL'
 
-addL' :: (Bool,[(Bool,Bool)]) :>: ([Bool],Bool)
-addL' = proc (ci,ps) -> do
+addL' :: ([(Bool,Bool)],Bool) :>: ([Bool],Bool)
+addL' = proc (ps,ci) -> do
           case ps of
             []      -> returnA -< ([],ci)
-            (p:ps') -> do (s ,co ) <- runTSFun addB  -< (ci,p)
-                          (ss,co') <- translateX addSep addL' -< (co,ps')
+            (p:ps') -> do (s ,co ) <- runTSFun addB  -< (p,ci)
+                          (ss,co') <- translateX addSep addL' -< (ps',co)
                           returnA -< (s:ss, co')
 
 drawAddL :: Int -> (Bool,[(Bool,Bool)]) :> ([Bool],Bool) -> IO ()
@@ -343,3 +444,65 @@ drawAddL n = draw (p2 (delta,0), map src [0..n-1])
        dx = addSep * fromIntegral i
 
 -- TODO: Try another version using take & iterate for summand positions.
+
+-}
+
+{--------------------------------------------------------------------
+    Use StateArrow to hide carry-passing.
+--------------------------------------------------------------------}
+
+type PixieSt e v m s = StateArrow s (Pixie e v m)
+
+runPixieSt :: ( Semigroup m, Floating (Scalar v), Ord (Scalar v)
+              , InnerSpace v, HasLinearMap v ) =>
+              (DecodePP v a b, DecodeP v s) =>
+              PixieSt e v m s a b -> TS (a,s) (Point v) -> (TS (b,s) (Point v), QDiagram e v m)
+runPixieSt (StateArrow q) a = runPixie q a
+
+type (:#>) = PixieSt SVG R2 Any Bool
+
+-- addBS :: ArrowState (~>) =>
+--          (Bool,Bool) ~> Bool
+-- addBS = error "addBS: not yet implemented"
+
+addBS :: (Bool,Bool) :#> Bool
+addBS = state addBDel
+
+-- TODO: Add some constraints to addBS
+
+-- addS :: (Traversable t (~>) (~>), ArrowState Bool (~>)) =>
+--         t (Bool,Bool) ~> (t Bool)
+-- addS = traverse addBS
+
+addA :: Traversable t (:#>) => 
+        t (Bool,Bool) :#> t Bool
+addA = traverse addBS
+
+-- TODO: Generalize from (:#>) to ArrowState
+
+-- addSV :: ((~>) ~ StateArrow Bool (-->), t ~ Vec n) =>
+--          (ArrowState Bool (~>), Traversable t (~>)) => 
+--          t (Bool,Bool) ~> t Bool
+-- addSV = addA
+
+type AddSV n = Vec n (Bool,Bool) :#> Vec n Bool
+
+addSV :: -- Traversable (Vec n) (:#>) => 
+         -- Alternatively:
+         (EncodeF (Vec n) (:#>), Traversable (EncodingF (Vec n)) (:#>)) =>
+         AddSV n
+addSV = addA
+
+addS4 :: AddSV N4
+addS4 = addA
+
+psDiag :: DecodePP R2 a b => Ports (a,Bool) -> (a :#> b) -> Diagram SVG R2
+psDiag a q = snd (runPixieSt q a)
+
+drawAddSV :: (IsNat n, a ~ Vec n (Bool, Bool), DecodePP R2 a b) =>
+             (a :#> b) -> IO ()
+drawAddSV q = defaultMain (psDiag addVIns q # pad 1.1)
+
+t :: IO ()
+t = drawAddSV (addA :: AddSV N8)
+
