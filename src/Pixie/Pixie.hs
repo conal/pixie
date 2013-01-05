@@ -57,7 +57,7 @@ import Diagrams.Backend.SVG
 import Diagrams.Backend.SVG.CmdLine
 
 import CatSynth.Misc (Unop)
-import CatSynth.Decode (EncodingF,EncodeF(..),Decoding,Decode(..))
+import CatSynth.Decode (Decoding,Decode(..)) -- EncodingF,EncodeF(..),
 import CatSynth.Traversable
 import CatSynth.Has
 import CatSynth.StripTypes
@@ -342,117 +342,66 @@ type R = Bool -- Sum (result) bit
 
 type A2  = A  :* A                      -- Addends
 type A2C = A2 :* C                      -- Addends and carry
-type CS  = C  :* R                      -- Carry and sum
+type CR  = C  :* R                      -- Carry and sum
+
+type o :< i = i :> o
 
 -- | Take a a carry-in from the left and pair of addend bits from above, and
 -- yield a sum bit below and a carry-out bit on the right.
-addB :: A2C :> CS
-addB = prim unitSquare
-         ((p2 (-1/6, 1/2), p2 (1/6, 1/2)) , p2 (-1/2, 0))
-         (p2 (1/2, 0)                     , p2 (0,-1/2))
+addB :: A2C :> CR
+addB = primDel
+         (\ (_,P c) -> c - r2 (5/6,0))
+         unitSquare
+         ((p2 (-1/6, 1/2), p2 (1/6, 1/2)) , p2 (1/2, 0))
+         (p2 (-1/2, 0)                    , p2 (0,-1/2))
 
-drawAddB :: A2C :> CS -> IO ()
-drawAddB = draw ((p2 (-1/6,1), p2 (1/6,1)), p2 (-1,0))
+drawAddB :: A2C :> CR -> IO ()
+drawAddB = draw ((p2 (-1/6,5/6), p2 (1/6,5/6)), p2 (5/6,0))
 
-addBDel :: A2C :> CS
-addBDel = primDel
-            (\ (_,P c) -> c + r2 (5/6,0))
-            unitSquare
-            ((p2 (-1/6, 1/2), p2 (1/6, 1/2)) , p2 (-1/2, 0))
-            (p2 (1/2, 0)                     , p2 (0,-1/2))
+-- drawAddB addB
 
+-- TODO: Consolidate and/or remove redundant location specifications
 
 {--------------------------------------------------------------------
     Carry ripple adder
 --------------------------------------------------------------------}
 
-type A2sC n = Vec n A2 :* C               -- Addends and carry
-type CSs n  = C :* Vec n R                -- Carry and sums
 
+type A2s  n = Vec n A2       -- Addends
+type Rs   n = Vec n R        -- Sums
+type A2sC n = A2s n :* C     -- Addends and carry
+type CRs  n = C :* Rs n      -- Carry and sums
 
 addVIns :: IsNat n => Ports (A2sC n)
-addVIns = (src <$> iota, p2 (delta,0))
+addVIns = (src <$> iota, origin)
  where
    delta = 1/2 - addSep
    src :: Int -> Ports A2
-   src i = translateX dx (p2 (-1/6,-delta), p2 (1/6,-delta))
+   src i = translateX (- dx) (p2 (-1/6,-delta), p2 (1/6,-delta))
      where
-       dx = addSep * fromIntegral i
+       dx = addSep * fromIntegral i + 5/6
 
 -- Spacing between adder boxes
 addSep :: Double
 addSep = 4/3
 
-type AddV n = A2sC n :> CSs n
+type AddV n = A2sC n :> CRs n
 
--- consV :: (a, Vec n a) -> Vec (S n) a
--- consV = uncurry (:<)
-
--- unConsV :: Vec (S n) a -> (a, Vec n a)
--- unConsV (a :< as) = (a,as)
-
--- addV :: IsNat n => AddV n  -- , DecodeP R2 (Vec n B)
--- addV = stf (addV' nat)
-
--- addV' :: Nat n -> (Vec n B2,B) :>: (Vec n B,B)
--- addV' = undefined
-
--- addV' Zero = proc (_,ci) -> returnA -< (ZVec,ci)
--- addV' (Succ n) = proc (unConsV -> (p, ps'), ci) -> do
---                     (s ,co ) <- runTSFun addB -< (p,ci)
---                     (ss,co') <- addV' n       -< (ps',co)
---                     returnA -< (s :< ss, co')
-
--- View pattern to avoid
--- 
---     Proc patterns cannot use existential or GADT data constructors
-
--- addV :: IsNat n => AddV' n  -- , DecodeP R2 (Vec n B)
--- addV = addV' nat
-
--- addV' :: Nat n -> AddV n
--- addV' Zero     = proc (_,ci) -> returnA -< (ZVec,ci)
--- addV' (Succ n) = proc (unConsV -> (p, ps'), ci) -> do
---                     (s ,co ) <- addB    -< (p,ci)
---                     (ss,co') <- addV' n -< (ps',co)
---                     returnA -< (s :< ss, co')
-
--- type PTS v c = TS c (Point v)
--- type DecodeP v c = (Decode (PTS v c), Decoding (PTS v c) ~ PTS v (Decoding c))
--- type DecodePP v a b = (DecodeP v a, DecodeP v b)
-
-drawAddV :: (IsNat n, DecodePP R2 (A2sC n) (CSs n)) =>
+drawAddV :: (IsNat n, DecodePP R2 (A2s n) (Rs n)) =>
             AddV n -> IO ()
-drawAddV = draw addVIns
+drawAddV a = draw addVIns (swapP . a)
 
--- For instance,
--- 
---   drawAddV (addV :: AddV N6)
--- 
---   *** Exception: arr: not defined on Strip (~>)
---
--- Sadly, arrow notation desugaring uses arr, which I cannot implement on Strip,
--- we can't use do notation with (:>). This problem isn't fundamental, since
--- the desugaring could use methods from HasPair and HasSum instead.
+-- For addition, I want to see vectors right-to-left
 
--- addV' :: Nat n -> AddV n
--- addV' Zero     = swapP . second (toVecZ . unVecZ)
--- addV' (Succ n) = 
---   undefined . first addB . lassocP . second unVecS
+toVecS' :: (HasPair (~>), HasVec (~>)) => (Vec n a :* a) ~> Vec (S n) a
+unVecS' :: (HasPair (~>), HasVec (~>)) => Vec (S n) a ~> (Vec n a :* a)
+toVecS' = toVecS . swapP
+unVecS' = swapP . unVecS
 
---  first toVecS . lassocP . second (addV' n) . rassocP . first addB . lassocP . second unVecS
+-- type AddV n = A2sC n :> CRs n
 
---  first toVecS . lassocP . second (addV' n) . rassocP . first addB . lassocP . second unVecS
-
--- second unVecS    :: (B, Vec (S n) BB)   :> (B, (BB, Vec n BB))
--- lassocP          :: (B, (BB, Vec n BB)) :> ((B, BB), Vec n BB)
--- first addB       :: ((B, BB), Vec n BB) :> ((B, B), Vec n BB)
--- rassocP          :: ((B, B), Vec n BB)  :> (B, (B, Vec n BB))
--- second (addV' n) :: (B, (B, Vec n BB))  :> (B, (Vec n B, B))
--- lassocP          :: (B, (Vec n B, B))   :> ((B, Vec n B), B)
--- first toVecS     :: ((B, Vec n B), B)   :> (Vec (S n) B, B)
-
--- TODO: swap results in addB
+addV :: IsNat n => AddV n
+addV = addV' nat
 
 -- addV' Zero     = proc (zvec,ci) -> returnA -< (ZVec,ci)
 -- addV' (Succ n) = proc (unConsV -> (p, ps'), ci) -> do
@@ -460,94 +409,65 @@ drawAddV = draw addVIns
 --                     (co',ss) <- addV' n -< (ps',co)
 --                     returnA -< (co', s :< ss)
 
-{-
+--   *** Exception: arr: not defined on Strip (~>)
+--
+-- Sadly, arrow notation desugaring uses arr, which I cannot implement on Strip,
+-- we can't use do notation with (:>). This problem isn't fundamental, since
+-- the desugaring could use methods from HasPair and HasSum instead.
 
--- List version
+-- Here's a sugar-free alternative:
 
-addL :: ([B2],B) :> ([B],B)
-addL = TF addL'
+addV' :: Nat n -> AddV n
+addV' Zero     = swapP . first (toVecZ . unVecZ)
+addV' (Succ n) = 
+    second toVecS' . rassocP . first (addV' n) . lassocP
+  . second addB    . rassocP . first unVecS'
 
-addL' :: ([B2],B) :>: ([B],B)
-addL' = proc (ps,ci) -> do
-          case ps of
-            []      -> returnA -< ([],ci)
-            (p:ps') -> do (s ,co ) <- runTSFun addB  -< (p,ci)
-                          (ss,co') <- translateX addSep addL' -< (ps',co)
-                          returnA -< (s:ss, co')
+{- Derivation:
 
--}
+first unVecS'    :: A2s (S n) :* C     :> (A2s n :* A2) :* C
+rassocP          :: (A2s n :* A2) :* C :> A2s n :* A2C
+second addB      :: A2s n :* A2C       :> A2s n :* CR
+lassocP          :: A2s n :* CRs       :> A2sC n :* R
+first (addV' n)  :: A2sC n :* R        :> CRs n :* R
+rassocP          :: CRs n :* R         :> C :* (Rs n :* R)
+second toVecS'   :: C :* (Rs n :* R)   :> C :* Rs (S n) :* R
 
-{-
-addL :: ([B2],B) :> ([B],B)
-addL = proc (ps,ci) -> do
-          case ps of
-            []      -> returnA -< ([],ci)
-            (p:ps') -> do (s ,co ) <- addB -< (p  ,ci)
-                          (ss,co') <- addL -< (ps',co)
-                          returnA -< (s:ss, co')
-
-drawAddL :: Int -> (B,[B2]) :> ([B],B) -> IO ()
-drawAddL n = draw (p2 (delta,0), map src [0..n-1])
- where
-   delta = 1/2 - addSep
-   src :: Int -> (P2,P2)
-   src i = translateX dx (p2 (-1/6,-delta), p2 (1/6,-delta))
-     where
-       dx = addSep * fromIntegral i
-
--- TODO: Try another version using take & iterate for summand positions.
 -}
 
 {--------------------------------------------------------------------
     Use StateArrow to hide carry-passing.
 --------------------------------------------------------------------}
 
+-- Circuit with state
 type PixieSt e v m s = StateArrow s (Pixie e v m)
 
 runPixieSt :: ( Semigroup m, Floating (Scalar v), Ord (Scalar v)
-              , InnerSpace v, HasLinearMap v ) =>
-              (DecodePP v a b, DecodeP v s) =>
-              PixieSt e v m s a b -> TS (a,s) (Point v) -> (TS (b,s) (Point v), QDiagram e v m)
+              , InnerSpace v, HasLinearMap v
+              , DecodePP v a b, DecodeP v s ) =>
+              PixieSt e v m s a b -> TS (a,s) (Point v)
+           -> (TS (b,s) (Point v), QDiagram e v m)
 runPixieSt = runPixie . runState
 
--- runPixieSt (StateArrow q) a = runPixie q a
-
+-- | Circuit with carry-valued state
 type (:#>) = PixieSt SVG R2 Any C
 
--- addBS :: ArrowState (~>) =>
---          B2 ~> B
--- addBS = error "addBS: not yet implemented"
-
+-- | Stateful single-bit full adder
 addBS :: A2 :#> R
-addBS = state (swapP . addBDel)
+addBS = state (swapP . addB)
 
--- TODO: Add some constraints to addBS
-
--- addS :: (Traversable t (~>) (~>), ArrowState B (~>)) =>
---         t B2 ~> (t B)
--- addS = traverse addBS
-
-addA :: Traversable t (:#>) => 
-        t A2 :#> t R
-addA = traverse addBS
+-- | Stateful ripple-carry adder for traversable structures
+addT :: Traversable t (:#>) => t A2 :#> t R
+addT = traverse addBS
 
 -- TODO: Generalize from (:#>) to ArrowState
 
--- addSV :: ((~>) ~ StateArrow B (-->), t ~ Vec n) =>
---          (ArrowState B (~>), Traversable t (~>)) => 
---          t B2 ~> t B
--- addSV = addA
-
+-- | Stateful ripple carry addition on vectors
 type AddSV n = Vec n A2 :#> Vec n R
 
-addSV :: -- Traversable (Vec n) (:#>) => 
-         -- Alternatively:
-         (EncodeF (Vec n) (:#>), Traversable (EncodingF (Vec n)) (:#>)) =>
-         AddSV n
-addSV = addA
-
-addS4 :: AddSV N4
-addS4 = addA
+-- | Ripple carry adder for vectors
+addSV :: Traversable (Vec n) (:#>) => AddSV n
+addSV = addT
 
 psDiag :: DecodePP R2 a b => Ports (a,C) -> (a :#> b) -> Diagram SVG R2
 psDiag a q = snd (runPixieSt q a)
@@ -557,4 +477,4 @@ drawAddSV :: (IsNat n, a ~ Vec n A2, DecodePP R2 a b) =>
 drawAddSV = out . psDiag addVIns
 
 t :: IO ()
-t = drawAddSV (addA :: AddSV N8)
+t = drawAddSV (addT :: AddSV N8)
