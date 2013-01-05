@@ -20,7 +20,7 @@ Library
   hs-Source-Dirs:      src
   Extensions:
   Build-Depends:       base<5, arrows, newtype, process, vector-space-points
-                     , diagrams-lib, diagrams-svg, type-unary
+                     , diagrams-lib, diagrams-svg, type-unary, functor-combo
                      , cat-synth
   Exposed-Modules:     
                        Pixie.TSFunGadt
