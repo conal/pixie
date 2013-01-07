@@ -458,11 +458,28 @@ type (:#>) = PixieSt SVG R2 Any C
 addS :: A2 :#> R
 addS = state (swapP . addB)
 
--- | Stateful ripple-carry adder for traversable structures
-addT :: Traversable t (:#>) => t A2 :#> t R
-addT = traverse addS
+-- type StateP e s (~>) = 
+--   ( ArrowState (~>), State (~>) ~ s
+--   , StateBaseArrow (~>) ~ Pixie e R2 Any, Renderable (Path R2) e )
 
--- TODO: Generalize from (:#>) to ArrowState
+type StateP s (~>) = 
+  ( ArrowState (~>), State (~>) ~ s
+  , StateBaseArrow (~>) ~ Pixie SVG R2 Any, Renderable (Path R2) SVG )
+
+-- Arrow-generalized version 
+addS'  :: StateP C (~>) => A2 ~> R
+addS' = state (swapP . addB)
+
+-- addS' :: (ArrowState (~>)) =>
+--          A2 ~> R
+-- addS' = state (swapP . addB)
+
+-- | Stateful ripple-carry adder for traversable structures
+-- addT :: Traversable t (:#>) => t A2 :#> t R
+-- addT = traverse addS
+addT :: (StateP C (~>), Traversable t (~>)) =>
+        t A2 ~> t R
+addT = traverse addS'
 
 -- TODO: Specialize to trees. How to draw the trees?
 
