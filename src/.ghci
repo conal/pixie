@@ -4,3 +4,6 @@
 
 -- So ghci can find CatSynth/Has-inc.hs
 :set -package cat-synth
+
+-- So I can pick up source changes to CatSynth
+:set -i../../cat-synth/src
