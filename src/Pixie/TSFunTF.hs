@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, TypeOperators #-}
+{-# LANGUAGE TypeFamilies, TypeOperators, ConstraintKinds #-}
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 {-# LANGUAGE CPP #-}
 
@@ -44,6 +44,7 @@ import Diagrams.Prelude (Transformable(..),V)
 
 import CatSynth.Has
 import CatSynth.Decode
+import CatSynth.Control.Arrow.Operations
 
 #include "CatSynth/Has-inc.hs"
 
@@ -213,3 +214,10 @@ instance (HasPair(~>), Arrow (~>), HasProd (~>)) => HasProd (TSFun x (~>)) where
 
 -- tsDecode :: TS a x -> TS (Decoding a) x
 -- tsDecode = tsMap undefined
+
+
+instance HasTrieCurry (~>) => HasTrieCurry (TSFun x (~>)) where
+  type TrieCurryConstraint s (TSFun x (~>)) a c =
+    ( TrieCurryConstraint (TS s x) (~>) (TS a x) (TS c x)
+    , TS (s :->: c) x ~ (TS s x :->: TS c x) )
+  trieCurry (TF f) = TF (trieCurry f)
