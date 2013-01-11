@@ -40,7 +40,7 @@ import Prelude hiding (id,(.),fst,snd,const)
 import Control.Monad (void)
 import Control.Category
 import Control.Arrow
-import Control.Arrow.Operations (ArrowWriter(..)) -- ,ArrowState(..)
+-- import Control.Arrow.Operations (ArrowWriter(..)) -- ,ArrowState(..)
 import Control.Arrow.Transformer (lift)
 import Control.Arrow.Transformer.Writer
 -- import Control.Arrow.Transformer.State
@@ -64,6 +64,7 @@ import CatSynth.StripTypes
 import CatSynth.Control.Arrow.Transformer.State
 
 import Pixie.TSFunTF -- or TSFunGadt
+import CatSynth.Control.Arrow.Operations
 
 -- For now, but remove the WriterArrow orphan later
 #include "CatSynth/Has-inc.hs"
@@ -464,6 +465,7 @@ addS = state (swapP . addB)
 
 type StateP s (~>) = 
   ( ArrowState (~>), State (~>) ~ s
+  , ArrowStateConstraint (~>) (Bool, Bool) Bool
   , StateBaseArrow (~>) ~ Pixie SVG R2 Any, Renderable (Path R2) SVG )
 
 -- Arrow-generalized version 

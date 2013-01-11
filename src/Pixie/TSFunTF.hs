@@ -28,14 +28,14 @@ module Pixie.TSFunTF where
 
 -- TODO: explicit exports
 
-import Prelude hiding (id,(.),fst,snd)
+import Prelude hiding (id,(.),fst,snd,curry,uncurry)
 
 import Control.Category
 import Control.Arrow
 
 -- import Control.Newtype
 
-import FunctorCombo.Functor (Const,Id,(:*:),(:+:),(:.))
+import FunctorCombo.Functor (Const,Id,(:*:),(:+:),(:.),(<~))
 
 import TypeUnary.Vec (Vec)
 
@@ -64,6 +64,14 @@ type instance TS Bool     t = t         -- TODO: add more
 
 type    TSFunX x (~>) a b = TS a x ~> TS b x
 newtype TSFun  x (~>) a b = TF { runTSFun :: TSFunX x (~>) a b }
+
+inTF :: (TSFunX x (~>) a b -> TSFunX x' (+>) a' b')
+     -> (TSFun  x (~>) a b -> TSFun  x' (+>) a' b')
+inTF = TF <~ runTSFun
+
+inTF2 :: (TSFunX x (~>) a b -> TSFunX x' (+>) a' b' -> TSFunX x'' (@>) a'' b'')
+      -> (TSFun  x (~>) a b -> TSFun  x' (+>) a' b' -> TSFun  x'' (@>) a'' b'')
+inTF2 = inTF <~ runTSFun
 
 -- instance Newtype (TSFun  x (~>) a b) (TS a x ~> TS b x) where
 --   pack   = TF
@@ -216,8 +224,22 @@ instance (HasPair(~>), Arrow (~>), HasProd (~>)) => HasProd (TSFun x (~>)) where
 -- tsDecode = tsMap undefined
 
 
-instance HasTrieCurry (~>) => HasTrieCurry (TSFun x (~>)) where
-  type TrieCurryConstraint s (TSFun x (~>)) a c =
-    ( TrieCurryConstraint (TS s x) (~>) (TS a x) (TS c x)
-    , TS (s :->: c) x ~ (TS s x :->: TS c x) )
-  trieCurry (TF f) = TF (trieCurry f)
+-- instance HasTrieCurry (~>) => HasTrieCurry (TSFun x (~>)) where
+--   type TrieCurryConstraint s (TSFun x (~>)) a c =
+--     ( TrieCurryConstraint (TS s x) (~>) (TS a x) (TS c x)
+--     , TS (s :->: c) x ~ (TS s x :->: TS c x) )
+--   trieCurry (TF f) = TF (trieCurry f)
+
+
+-- class HasCurry (~>) where
+--   curry   :: ((a,b) ~> c) -> (a ~> (b ~> c))
+--   uncurry :: (a ~> (b ~> c)) -> ((a,b) ~> c)
+
+type instance TS (TSFun x (~>) b c) y = TS (TS x b ~> TS x c) y
+
+instance HasCurry (~>) => HasCurry (TSFun x (~>)) where
+  type CurryConstraint (TSFun x (~>)) a b c = 
+    ( CurryConstraint (~>) (TS a x) (TS b x) (TS c x)
+    , TS (TS x b ~> TS x c) x ~ (TS b x ~> TS c x) )
+  curry   = inTF curry
+  uncurry = inTF uncurry
